@@ -5,7 +5,7 @@ using TMPro;
 public class HUDManager : MonoBehaviour
 {
     [Header("References")]
-    public GameObject[] lifeIcons;        // 3 个 Life Indicator Image
+    public GameObject[] lifeIcons;        
     public TMP_Text scoreText;
     public TMP_Text timerText;
     public TMP_Text scaredTimerText;

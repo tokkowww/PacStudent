@@ -1,29 +1,27 @@
-using System;
-using Unity.VisualScripting;
 using UnityEngine;
 
 public class LevelGenerator : MonoBehaviour
 {
     [Header("Prefabs")]
     public GameObject empty;
-    public GameObject outCorner;   
-    public GameObject outWall;     
-    public GameObject innerCorner;    
-    public GameObject innerWall;      
-    public GameObject pellet;         
-    public GameObject powerPellet;     
+    public GameObject outCorner;
+    public GameObject outWall;
+    public GameObject innerCorner;
+    public GameObject innerWall;
+    public GameObject pellet;
+    public GameObject powerPellet;
     public GameObject tJunction;
     public GameObject exit;
 
     [Header("Level01")]
-    public GameObject level01;     
+    public GameObject level01;
     public float tileSize = 1f;
 
     static readonly int[] DR = { -1, 0, 1, 0 };
     static readonly int[] DC = { 0, 1, 0, -1 };
 
     int[,] levelMap =
-   {
+    {
         {1,2,2,2,2,2,2,2,2,2,2,2,2,7},
         {2,5,5,5,5,5,5,5,5,5,5,5,5,4},
         {2,5,3,4,4,3,5,3,4,4,4,3,5,4},
@@ -48,7 +46,7 @@ public class LevelGenerator : MonoBehaviour
     {
         int height = arr.GetLength(0);
         int width = arr.GetLength(1);
-        int H = height * 2 - 1;   
+        int H = height * 2 - 1;
         int W = width * 2;
         int[,] map = new int[H, W];
 
@@ -57,10 +55,10 @@ public class LevelGenerator : MonoBehaviour
             for (int c = 0; c < width; c++)
             {
                 int v = arr[r, c];
-                map[r, c] = v;                     
-                map[r, W - 1 - c] = v;                
-                map[H - 1 - r, c] = v;                
-                map[H - 1 - r, W - 1 - c] = v;          
+                map[r, c] = v;
+                map[r, W - 1 - c] = v;
+                map[H - 1 - r, c] = v;
+                map[H - 1 - r, W - 1 - c] = v;
             }
         }
         return map;
@@ -68,18 +66,20 @@ public class LevelGenerator : MonoBehaviour
 
     bool InBounds(int r, int c) { return r >= 0 && r < rows && c >= 0 && c < cols; }
 
+    static bool IsFloor(int v) { return v == 0 || v == 5 || v == 6; }
+
     bool IsOpen(int r, int c)
     {
-        if (!InBounds(r, c)) return true;  
-        int v = wholeMap[r, c];
-        return v == 0 || v == 5 || v == 6;
+        if (!InBounds(r, c)) return true;
+        return IsFloor(wholeMap[r, c]);
     }
+
     bool Conn(int r, int c, int dir)
     {
         int nr = r + DR[dir], nc = c + DC[dir];
         if (!InBounds(nr, nc)) return false;
         int self = wholeMap[r, c], v = wholeMap[nr, nc];
-        if (v == 0 || v == 5 || v == 6) return false;
+        if (IsFloor(v)) return false;
         if (self == 7) return true;
         if (self == 1 || self == 2) return v == 1 || v == 2 || v == 7;
         return v == 3 || v == 4 || v == 7 || v == 8;
@@ -99,8 +99,7 @@ public class LevelGenerator : MonoBehaviour
 
     float CornerAngle(int r, int c)
     {
-
-        float[] cwAngles = { 270f, 0f, 90f, 180f };
+        float[] angles = { 90f, 0f, 270f, 180f };
 
         int best = -1, bestScore = -1;
         for (int i = 0; i < 4; i++)
@@ -110,24 +109,24 @@ public class LevelGenerator : MonoBehaviour
 
             int o1 = (i + 2) % 4, o2 = (i + 3) % 4;
             int score = 0;
+            if (IsOpen(r + DR[a] + DR[b], c + DC[a] + DC[b])) score += 10;
             if (IsOpen(r + DR[o1], c + DC[o1])) score++;
             if (IsOpen(r + DR[o2], c + DC[o2])) score++;
             if (IsOpen(r + DR[o1] + DR[o2], c + DC[o1] + DC[o2])) score++;
 
             if (score > bestScore) { bestScore = score; best = i; }
         }
-        return best < 0 ? 0f : cwAngles[best];
+        return best < 0 ? 0f : angles[best];
     }
 
     float TAngle(int r, int c)
     {
         if (!Conn(r, c, 0)) return 0f;
-        if (!Conn(r, c, 1)) return 90f;
+        if (!Conn(r, c, 3)) return 90f;
         if (!Conn(r, c, 2)) return 180f;
-        if (!Conn(r, c, 3)) return 270f;
+        if (!Conn(r, c, 1)) return 270f;
         return 0f;
     }
-
 
     Vector3 CellToWorld(int r, int c)
     {
@@ -135,10 +134,6 @@ public class LevelGenerator : MonoBehaviour
         float y = ((rows - 1) / 2f - r) * tileSize;
         return new Vector3(x, y, 0);
     }
-
-
-
-
 
     void FitCamera()
     {
@@ -149,46 +144,58 @@ public class LevelGenerator : MonoBehaviour
         float sizeByW = cols * tileSize / 2f / cam.aspect;
         cam.orthographicSize = Mathf.Max(sizeByH, sizeByW) + tileSize;
     }
+
     void Start()
     {
-            if (level01 != null) Destroy(level01);
+        if (level01 != null) Destroy(level01);
 
-            wholeMap = GetWholeMap(levelMap);
-            rows = wholeMap.GetLength(0);
-            cols = wholeMap.GetLength(1);
+        wholeMap = GetWholeMap(levelMap);
+        rows = wholeMap.GetLength(0);
+        cols = wholeMap.GetLength(1);
 
-            GameObject root = new GameObject("GeneratedLevel");
+        GameObject root = new GameObject("GeneratedLevel");
 
-            for (int r = 0; r < rows; r++)
+        for (int r = 0; r < rows; r++)
+        {
+            for (int c = 0; c < cols; c++)
             {
-                for (int c = 0; c < cols; c++)
+                int id = wholeMap[r, c];
+                Vector3 pos = CellToWorld(r, c);
+
+                if (IsFloor(id) && empty != null)
+                    Instantiate(empty, pos, Quaternion.identity, root.transform);
+
+                if (id == 0) continue;
+
+                GameObject prefab = null;
+                float angle = 0f;
+
+                switch (id)
                 {
-                    int id = wholeMap[r, c];
-                    if (id == 0) continue;
+                    case 1: prefab = outCorner; angle = CornerAngle(r, c); break;
+                    case 2: prefab = outWall; angle = WallAngle(r, c); break;
+                    case 3: prefab = innerCorner; angle = CornerAngle(r, c); break;
+                    case 4: prefab = innerWall; angle = WallAngle(r, c); break;
+                    case 5: prefab = pellet; break;
+                    case 6: prefab = powerPellet; break;
+                    case 7: prefab = tJunction; angle = TAngle(r, c); break;
+                    case 8: prefab = exit; angle = WallAngle(r, c); break;
+                }
 
-                    Vector3 pos = CellToWorld(r, c);
-                    GameObject prefab = null;
-                    float angle = 0f;
+                if (prefab == null) continue;
 
-                    switch (id)
-                    {
-                        case 1: prefab = outCorner; angle = CornerAngle(r, c); break;
-                        case 3: prefab = innerCorner; angle = CornerAngle(r, c); break;
-                        case 2: prefab = outWall; angle = WallAngle(r, c); break;
-                        case 4: prefab = innerWall; angle = WallAngle(r, c); break;
-                        case 7: prefab = tJunction; angle = TAngle(r, c); break;
-                        case 5: prefab = pellet; break;
-                        case 6: prefab = powerPellet; break;
-                        case 8: prefab = exit; angle = WallAngle(r, c); break;
-                    }
+                bool isPellet = id == 5 || id == 6;
+                Vector3 spawnPos = isPellet ? pos + new Vector3(0, 0, -0.1f) : pos;
+                GameObject go = Instantiate(prefab, spawnPos, Quaternion.Euler(0, 0, angle), root.transform);
 
-                    if (prefab != null)
-                        Instantiate(prefab, pos, Quaternion.Euler(0, 0, angle), root.transform);
+                if (isPellet)
+                {
+                    foreach (var sr in go.GetComponentsInChildren<SpriteRenderer>())
+                        sr.sortingOrder += 1;
                 }
             }
+        }
 
-            FitCamera();
+        FitCamera();
     }
-    
-
 }

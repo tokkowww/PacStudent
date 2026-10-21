@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public class LevelGenerator : MonoBehaviour
@@ -17,10 +18,15 @@ public class LevelGenerator : MonoBehaviour
     public GameObject level01;
     public float tileSize = 1f;
 
+    [Header("Characters")]
+    public GameObject pacStudentPrefab;
+    public GameObject[] ghostPrefabs = new GameObject[4];
+    public int characterSortingOrder = 10;
+
     static readonly int[] DR = { -1, 0, 1, 0 };
     static readonly int[] DC = { 0, 1, 0, -1 };
 
-    int[,] levelMap =
+    public int[,] levelMap =
     {
         {1,2,2,2,2,2,2,2,2,2,2,2,2,7},
         {2,5,5,5,5,5,5,5,5,5,5,5,5,4},
@@ -41,6 +47,12 @@ public class LevelGenerator : MonoBehaviour
 
     int[,] wholeMap;
     int rows, cols;
+    Vector2Int pacCell;
+    List<Vector2Int> ghostCells;
+
+    public int[,] WholeMap => wholeMap;
+    public int Rows => rows;
+    public int Cols => cols;
 
     int[,] GetWholeMap(int[,] arr)
     {
@@ -128,7 +140,7 @@ public class LevelGenerator : MonoBehaviour
         return 0f;
     }
 
-    Vector3 CellToWorld(int r, int c)
+    public Vector3 CellToWorld(int r, int c)
     {
         float x = (c - (cols - 1) / 2f) * tileSize;
         float y = ((rows - 1) / 2f - r) * tileSize;
@@ -152,6 +164,10 @@ public class LevelGenerator : MonoBehaviour
         wholeMap = GetWholeMap(levelMap);
         rows = wholeMap.GetLength(0);
         cols = wholeMap.GetLength(1);
+
+        pacCell = FindNearestCells(0f, 0f, v => v == 5, 1)[0];
+        wholeMap[pacCell.x, pacCell.y] = 0;
+        ghostCells = FindNearestCells((rows - 1) / 2f, (cols - 1) / 2f, v => v == 0, 4);
 
         GameObject root = new GameObject("GeneratedLevel");
 
@@ -196,6 +212,59 @@ public class LevelGenerator : MonoBehaviour
             }
         }
 
+        SpawnCharacters();
         FitCamera();
+    }
+
+    List<Vector2Int> FindNearestCells(float tr, float tc, System.Func<int, bool> match, int count)
+    {
+        List<Vector2Int> cells = new List<Vector2Int>();
+        for (int r = 0; r < rows; r++)
+            for (int c = 0; c < cols; c++)
+                if (match(wholeMap[r, c])) cells.Add(new Vector2Int(r, c));
+
+        cells.Sort((a, b) =>
+        {
+            float da = (a.x - tr) * (a.x - tr) + (a.y - tc) * (a.y - tc);
+            float db = (b.x - tr) * (b.x - tr) + (b.y - tc) * (b.y - tc);
+            if (da != db) return da.CompareTo(db);
+            if (a.x != b.x) return a.x.CompareTo(b.x);
+            return a.y.CompareTo(b.y);
+        });
+
+        if (cells.Count > count) cells.RemoveRange(count, cells.Count - count);
+        return cells;
+    }
+
+    void SpawnCharacters()
+    {
+        GameObject root = new GameObject("Characters");
+
+        if (pacStudentPrefab != null)
+        {
+            GameObject pac = Instantiate(pacStudentPrefab, CellToWorld(pacCell.x, pacCell.y), Quaternion.identity, root.transform);
+            pac.name = "PacStudent";
+            SetSorting(pac);
+            PacStudentController ctrl = pac.GetComponent<PacStudentController>();
+            if (ctrl != null) ctrl.Init(this, pacCell.x, pacCell.y);
+        }
+
+        if (ghostPrefabs == null || ghostPrefabs.Length == 0) return;
+
+        for (int i = 0; i < ghostCells.Count; i++)
+        {
+            GameObject prefab = ghostPrefabs[i % ghostPrefabs.Length];
+            if (prefab == null) continue;
+            Vector2Int cell = ghostCells[i];
+            GameObject ghost = Instantiate(prefab, CellToWorld(cell.x, cell.y), Quaternion.identity, root.transform);
+            ghost.name = "Ghost" + (i + 1);
+            SetSorting(ghost);
+        }
+    }
+
+    void SetSorting(GameObject go)
+    {
+        foreach (var sr in go.GetComponentsInChildren<SpriteRenderer>())
+            sr.sortingOrder = characterSortingOrder;
     }
 }

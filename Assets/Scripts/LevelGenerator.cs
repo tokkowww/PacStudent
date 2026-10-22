@@ -14,6 +14,11 @@ public class LevelGenerator : MonoBehaviour
     public GameObject tJunction;
     public GameObject exit;
 
+    [Header("Collectables")]
+    public GameObject pelletItem;
+    public GameObject powerPillItem;
+    public int itemSortingOrder = 5;
+
     [Header("Level01")]
     public GameObject level01;
     public float tileSize = 1f;
@@ -170,6 +175,7 @@ public class LevelGenerator : MonoBehaviour
         ghostCells = FindNearestCells((rows - 1) / 2f, (cols - 1) / 2f, v => v == 0, 4);
 
         GameObject root = new GameObject("GeneratedLevel");
+        GameObject itemRoot = new GameObject("Collectables");
 
         for (int r = 0; r < rows; r++)
         {
@@ -208,12 +214,22 @@ public class LevelGenerator : MonoBehaviour
                 {
                     foreach (var sr in go.GetComponentsInChildren<SpriteRenderer>())
                         sr.sortingOrder += 1;
+
+                    SpawnItem(id == 5 ? pelletItem : powerPillItem, pos, itemRoot.transform);
                 }
             }
         }
 
         SpawnCharacters();
         FitCamera();
+    }
+
+    void SpawnItem(GameObject prefab, Vector3 pos, Transform parent)
+    {
+        if (prefab == null) return;
+        GameObject item = Instantiate(prefab, pos + new Vector3(0, 0, -0.2f), Quaternion.identity, parent);
+        foreach (var sr in item.GetComponentsInChildren<SpriteRenderer>())
+            sr.sortingOrder = itemSortingOrder;
     }
 
     List<Vector2Int> FindNearestCells(float tr, float tc, System.Func<int, bool> match, int count)

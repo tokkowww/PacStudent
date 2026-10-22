@@ -1,8 +1,10 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Playables;
 using UnityEngine.Animations;
 
+[RequireComponent(typeof(Rigidbody2D))]
 public class PacStudentController : MonoBehaviour
 {
     [Header("Grid / Level")]
@@ -18,11 +20,22 @@ public class PacStudentController : MonoBehaviour
     public AudioClip eatClip;
     public ParticleSystem dust;
 
+    [Header("Collision Feedback")]
+    public AudioSource sfxAudio;
+    public AudioClip wallBumpClip;
+    public AudioClip cherryClip;
+    public AudioClip deathSoundClip;
+    public AudioClip ghostEatClip;
+    public ParticleSystem wallBumpPrefab;
+    public ParticleSystem deathParticlePrefab;
+
     [Header("Animation Clips")]
     public AnimationClip upClip;
     public AnimationClip leftClip;
     public AnimationClip downClip;
     public AnimationClip rightClip;
+    public AnimationClip deathClip;
+    public float fallbackDeathDuration = 1.5f;
 
     private KeyCode lastInput = KeyCode.None;
     private KeyCode currentInput = KeyCode.None;
@@ -37,6 +50,8 @@ public class PacStudentController : MonoBehaviour
     private PlayableGraph graph;
     private AnimationPlayableOutput animOutput;
     private AnimationClipPlayable currentClip;
+    private bool wasBlocked;
+    private bool controlEnabled = true;
 
     public void Init(LevelGenerator generator, int row, int col)
     {
@@ -47,7 +62,10 @@ public class PacStudentController : MonoBehaviour
 
     void Start()
     {
-        if (levelGenerator == null) levelGenerator = FindObjectOfType<LevelGenerator>();
+        Rigidbody2D rb = GetComponent<Rigidbody2D>();
+        rb.bodyType = RigidbodyType2D.Kinematic;
+
+        if (levelGenerator == null) levelGenerator = FindAnyObjectByType<LevelGenerator>();
         map = (int[,])levelGenerator.WholeMap.Clone();
 
         gridPos = new Vector2Int(startCol, -startRow);
@@ -72,6 +90,8 @@ public class PacStudentController : MonoBehaviour
 
     void Update()
     {
+        if (!controlEnabled) return;
+
         GatherInput();
 
         if (isLerping)
@@ -107,15 +127,53 @@ public class PacStudentController : MonoBehaviour
 
     void TryMove()
     {
-        if (lastInput != KeyCode.None && IsWalkable(gridPos + KeyToDir(lastInput)))
+        if (lastInput != KeyCode.None && CanMove(KeyToDir(lastInput)))
         {
             currentInput = lastInput;
-            StartLerp(KeyToDir(currentInput));
+            Move(KeyToDir(currentInput));
         }
-        else if (currentInput != KeyCode.None && IsWalkable(gridPos + KeyToDir(currentInput)))
+        else if (currentInput != KeyCode.None && CanMove(KeyToDir(currentInput)))
         {
-            StartLerp(KeyToDir(currentInput));
+            Move(KeyToDir(currentInput));
         }
+        else if (currentInput != KeyCode.None && !wasBlocked)
+        {
+            wasBlocked = true;
+            OnWallBump(KeyToDir(currentInput));
+        }
+    }
+
+    bool CanMove(Vector2Int dir)
+    {
+        return IsWalkable(gridPos + dir) || IsTunnelExit(dir);
+    }
+
+    bool IsTunnelExit(Vector2Int dir)
+    {
+        if (dir.y != 0 || dir.x == 0) return false;
+        Vector2Int next = gridPos + dir;
+        int r = Row(next);
+        int c = Col(next);
+        if (r < 0 || r >= map.GetLength(0)) return false;
+        if (c >= 0 && c < map.GetLength(1)) return false;
+        Vector2Int opposite = new Vector2Int(dir.x < 0 ? map.GetLength(1) - 1 : 0, gridPos.y);
+        return IsWalkable(opposite);
+    }
+
+    void Move(Vector2Int dir)
+    {
+        if (IsTunnelExit(dir))
+        {
+            Teleport(dir);
+            if (!IsWalkable(gridPos + dir)) return;
+        }
+        StartLerp(dir);
+    }
+
+    void Teleport(Vector2Int dir)
+    {
+        gridPos = new Vector2Int(dir.x < 0 ? map.GetLength(1) - 1 : 0, gridPos.y);
+        transform.position = GridToWorld(gridPos);
     }
 
     void StartLerp(Vector2Int dir)
@@ -127,6 +185,7 @@ public class PacStudentController : MonoBehaviour
         lerpStartTime = Time.time;
         lerpDuration = 1f / tilesPerSecond;
         isLerping = true;
+        wasBlocked = false;
 
         AudioClip clip = IsPellet(next) ? eatClip : moveClip;
         if (moveAudio && moveAudio.clip != clip)
@@ -142,6 +201,100 @@ public class PacStudentController : MonoBehaviour
     void OnReachedTile()
     {
         if (IsPellet(gridPos)) map[Row(gridPos), Col(gridPos)] = 0;
+    }
+
+    void OnWallBump(Vector2Int dir)
+    {
+        Vector3 here = GridToWorld(gridPos);
+        Vector3 point = Vector3.Lerp(here, GridToWorld(gridPos + dir), 0.5f);
+
+        if (wallBumpPrefab)
+        {
+            ParticleSystem ps = Instantiate(wallBumpPrefab, point, Quaternion.identity);
+            ps.Play();
+            Destroy(ps.gameObject, ps.main.duration + ps.main.startLifetime.constantMax);
+        }
+
+        PlaySfx(wallBumpClip);
+    }
+
+    void OnTriggerEnter2D(Collider2D other)
+    {
+        if (!controlEnabled) return;
+
+        switch (other.tag)
+        {
+            case "Pellet":
+                Destroy(other.gameObject);
+                GameManager.Instance.AddScore(10);
+                break;
+
+            case "PowerPill":
+                Destroy(other.gameObject);
+                GameManager.Instance.AddScore(50);
+                GameManager.Instance.ActivatePowerPill();
+                break;
+
+            case "Cherry":
+                Destroy(other.gameObject);
+                GameManager.Instance.AddScore(100);
+                PlaySfx(cherryClip);
+                break;
+
+            case "Ghost":
+                GhostController ghost = other.GetComponent<GhostController>();
+                if (ghost == null) break;
+                if (ghost.State == GhostState.Normal)
+                {
+                    GameManager.Instance.PlayerDie();
+                }
+                else if (ghost.State == GhostState.Scared || ghost.State == GhostState.Recovering)
+                {
+                    PlaySfx(ghostEatClip);
+                    GameManager.Instance.EatGhost(ghost);
+                }
+                break;
+        }
+    }
+
+    public IEnumerator DeathSequence()
+    {
+        controlEnabled = false;
+        isLerping = false;
+
+        if (dust) dust.Stop();
+        if (moveAudio) moveAudio.Stop();
+
+        float duration = deathClip != null ? deathClip.length : fallbackDeathDuration;
+
+        if (deathParticlePrefab)
+        {
+            ParticleSystem ps = Instantiate(deathParticlePrefab, transform.position, Quaternion.identity);
+            ps.Play();
+            Destroy(ps.gameObject, duration + ps.main.startLifetime.constantMax);
+        }
+
+        PlaySfx(deathSoundClip);
+        PlayClip(deathClip, 1);
+
+        yield return new WaitForSeconds(duration);
+
+        gridPos = new Vector2Int(startCol, -startRow);
+        transform.position = GridToWorld(gridPos);
+        lastInput = KeyCode.None;
+        currentInput = KeyCode.None;
+        wasBlocked = false;
+
+        facing = Vector2Int.zero;
+        SetFacing(Vector2Int.right);
+        if (currentClip.IsValid()) currentClip.SetSpeed(0);
+
+        controlEnabled = true;
+    }
+
+    void PlaySfx(AudioClip clip)
+    {
+        if (sfxAudio && clip) sfxAudio.PlayOneShot(clip);
     }
 
     void UpdateFeedback()
@@ -171,6 +324,12 @@ public class PacStudentController : MonoBehaviour
         facing = dir;
 
         double speed = currentClip.IsValid() ? currentClip.GetSpeed() : 1;
+        PlayClip(clip, speed);
+    }
+
+    void PlayClip(AnimationClip clip, double speed)
+    {
+        if (!graph.IsValid() || clip == null) return;
         if (currentClip.IsValid()) currentClip.Destroy();
         currentClip = AnimationClipPlayable.Create(graph, clip);
         currentClip.SetSpeed(speed);

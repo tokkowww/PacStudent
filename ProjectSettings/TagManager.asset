@@ -3,7 +3,11 @@
 --- !u!78 &1
 TagManager:
   serializedVersion: 3
-  tags: []
+  tags:
+  - Pellet
+  - PowerPill
+  - Cherry
+  - Ghost
   layers:
   - Default
   - TransparentFX

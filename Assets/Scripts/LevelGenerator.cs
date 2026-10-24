@@ -172,7 +172,11 @@ public class LevelGenerator : MonoBehaviour
 
         pacCell = FindNearestCells(0f, 0f, v => v == 5, 1)[0];
         wholeMap[pacCell.x, pacCell.y] = 0;
-        ghostCells = FindNearestCells((rows - 1) / 2f, (cols - 1) / 2f, v => v == 0, 4);
+        ghostCells = new List<Vector2Int>();
+        int midRow = rows / 2;
+        int firstCol = cols / 2 - 2;
+        for (int i = 0; i < 4; i++)
+            ghostCells.Add(new Vector2Int(midRow, firstCol + i));
 
         GameObject root = new GameObject("GeneratedLevel");
         GameObject itemRoot = new GameObject("Collectables");
@@ -275,6 +279,8 @@ public class LevelGenerator : MonoBehaviour
             GameObject ghost = Instantiate(prefab, CellToWorld(cell.x, cell.y), Quaternion.identity, root.transform);
             ghost.name = "Ghost" + (i + 1);
             SetSorting(ghost);
+            GhostController gc = ghost.GetComponent<GhostController>();
+            if (gc != null) gc.Init(this, i + 1, cell.x, cell.y);
         }
     }
 

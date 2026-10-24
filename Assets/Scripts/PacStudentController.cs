@@ -62,6 +62,8 @@ public class PacStudentController : MonoBehaviour
 
     void Start()
     {
+        if (GameManager.Instance) GameManager.Instance.RegisterPacStudent(this);
+
         Rigidbody2D rb = GetComponent<Rigidbody2D>();
         rb.bodyType = RigidbodyType2D.Kinematic;
 
@@ -88,8 +90,16 @@ public class PacStudentController : MonoBehaviour
         if (graph.IsValid()) graph.Destroy();
     }
 
+    bool GameActive => GameManager.Instance == null || GameManager.Instance.IsPlaying;
+
     void Update()
     {
+        if (!GameActive)
+        {
+            Halt();
+            return;
+        }
+
         if (!controlEnabled) return;
 
         GatherInput();
@@ -220,19 +230,21 @@ public class PacStudentController : MonoBehaviour
 
     void OnTriggerEnter2D(Collider2D other)
     {
-        if (!controlEnabled) return;
+        if (!controlEnabled || !GameActive) return;
 
         switch (other.tag)
         {
             case "Pellet":
                 Destroy(other.gameObject);
                 GameManager.Instance.AddScore(10);
+                GameManager.Instance.PelletEaten();
                 break;
 
             case "PowerPill":
                 Destroy(other.gameObject);
                 GameManager.Instance.AddScore(50);
                 GameManager.Instance.ActivatePowerPill();
+                GameManager.Instance.PelletEaten();
                 break;
 
             case "Cherry":
@@ -290,6 +302,18 @@ public class PacStudentController : MonoBehaviour
         if (currentClip.IsValid()) currentClip.SetSpeed(0);
 
         controlEnabled = true;
+    }
+
+    void Halt()
+    {
+        if (isLerping)
+        {
+            isLerping = false;
+            transform.position = lerpEnd;
+        }
+        if (currentClip.IsValid()) currentClip.SetSpeed(0);
+        if (moveAudio && moveAudio.isPlaying) moveAudio.Stop();
+        if (dust && dust.isPlaying) dust.Stop();
     }
 
     void PlaySfx(AudioClip clip)
